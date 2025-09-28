@@ -59,78 +59,114 @@ function rateLimit(ip, limit = 10, windowMs = 15 * 60 * 1000) {
 }
 
 module.exports = async (req, res) => {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-  
-  // Rate limiting
-  const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
-  if (!rateLimit(clientIp)) {
-    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
-  }
-  
-  // Use multer middleware
-  upload.single('file')(req, res, async (err) => {
-    if (err) {
-      console.error('Multer error:', err);
-      if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+  try {
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    console.log('API called:', { 
+      method: req.method, 
+      url: req.url,
+      headers: req.headers,
+      awsConfigured: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+    });
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+    
+    if (req.method !== 'POST') {
+      console.log('Method not allowed:', req.method);
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+    
+    // Check AWS configuration
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      console.error('Missing AWS credentials');
+      return res.status(500).json({ error: 'AWS credentials not configured' });
+    }
+    
+    // Rate limiting
+    const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+    if (!rateLimit(clientIp)) {
+      console.log('Rate limit exceeded for IP:', clientIp);
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    
+    // Use multer middleware
+    upload.single('file')(req, res, async (err) => {
+      if (err) {
+        console.error('Multer error:', err);
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+          }
         }
+        return res.status(400).json({ error: err.message });
       }
-      return res.status(400).json({ error: err.message });
-    }
-    
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    
-    try {
-      // Generate unique filename
-      const fileExtension = req.file.originalname.split('.').pop();
-      const fileName = `${uuidv4()}.${fileExtension}`;
       
-      // Upload to S3
-      const uploadParams = {
-        Bucket: process.env.AWS_BUCKET_NAME || 'file-uploader-demo-kiran',
-        Key: fileName,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        // Don't set ACL - using bucket policy instead
-      };
+      if (!req.file) {
+        console.error('No file uploaded');
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
       
-      console.log('Uploading to S3:', { bucket: uploadParams.Bucket, key: fileName });
-      
-      const result = await s3.upload(uploadParams).promise();
-      
-      console.log('S3 upload successful:', result.Location);
-      
-      // Return success response
-      res.status(200).json({
-        message: 'File uploaded successfully',
-        fileName: fileName,
-        originalName: req.file.originalname,
-        size: req.file.size,
-        url: result.Location,
-        uploadedAt: new Date().toISOString()
+      console.log('File received:', {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
       });
       
-    } catch (error) {
-      console.error('S3 upload error:', error);
-      res.status(500).json({ 
-        error: 'Failed to upload file to cloud storage',
-        details: error.message 
-      });
-    }
-  });
+      try {
+        // Generate unique filename
+        const fileExtension = req.file.originalname.split('.').pop();
+        const fileName = `${uuidv4()}.${fileExtension}`;
+        
+        // Upload to S3
+        const uploadParams = {
+          Bucket: process.env.AWS_BUCKET_NAME || 'file-uploader-demo-kiran',
+          Key: fileName,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype,
+          // Don't set ACL - using bucket policy instead
+        };
+        
+        console.log('Uploading to S3:', { 
+          bucket: uploadParams.Bucket, 
+          key: fileName,
+          region: process.env.AWS_REGION,
+          contentType: req.file.mimetype
+        });
+        
+        const result = await s3.upload(uploadParams).promise();
+        
+        console.log('S3 upload successful:', result.Location);
+        
+        // Return success response
+        res.status(200).json({
+          message: 'File uploaded successfully',
+          fileName: fileName,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          url: result.Location,
+          uploadedAt: new Date().toISOString()
+        });
+        
+      } catch (error) {
+        console.error('S3 upload error:', error);
+        res.status(500).json({ 
+          error: 'Failed to upload file to cloud storage',
+          details: error.message,
+          code: error.code
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
 };

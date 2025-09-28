@@ -90,21 +90,41 @@ const FileUploader = () => {
         },
       });
 
-      if (response.data.success) {
+      console.log('Upload response:', response.data);
+
+      // Check if upload was successful
+      if (response.data.message && response.data.url) {
         setUploadedFiles([...uploadedFiles, {
           name: selectedFile.name,
-          url: response.data.fileUrl,
+          url: response.data.url,
           size: selectedFile.size,
           type: selectedFile.type,
-          uploadedAt: new Date().toISOString()
+          uploadedAt: response.data.uploadedAt || new Date().toISOString()
         }]);
         setSelectedFile(null);
         // Reset file input
         document.getElementById('file-input').value = '';
+      } else {
+        throw new Error('Upload response missing required data');
       }
     } catch (error) {
       console.error('Upload error:', error);
-      setError(error.response?.data?.message || 'Upload failed. Please try again.');
+      console.error('Error response:', error.response?.data);
+      
+      let errorMessage = 'Upload failed. Please try again.';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+        if (error.response.data.details) {
+          errorMessage += ` (${error.response.data.details})`;
+        }
+        if (error.response.data.code) {
+          errorMessage += ` [${error.response.data.code}]`;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setUploading(false);
       setUploadProgress(0);
