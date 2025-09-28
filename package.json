@@ -1,0 +1,21 @@
+{
+  "name": "cloud-file-uploader",
+  "version": "1.0.0",
+  "description": "A full-stack file uploader with AWS S3 integration",
+  "main": "backend/server.js",
+  "scripts": {
+    "install-all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm start\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm start",
+    "start": "cd backend && npm start",
+    "build": "cd frontend && npm run build",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["file-upload", "aws-s3", "react", "express", "nodejs"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
