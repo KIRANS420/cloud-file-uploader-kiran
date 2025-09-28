@@ -58,7 +58,7 @@ function rateLimit(ip, limit = 10, windowMs = 15 * 60 * 1000) {
   return true;
 }
 
-export default function handler(req, res) {
+module.exports = async (req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -133,4 +133,4 @@ export default function handler(req, res) {
       });
     }
   });
-}
+};
